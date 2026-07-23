@@ -86,7 +86,7 @@ function Invoke-Step {
         if (-not (Test-Command $tool)) {
             $msg = "$tool not found; skipped"
             Write-LogMessage "⊘ $Provider : $msg"
-            $Script:Results.Add([PSCustomObject]@{
+            $null = $Script:Results.Add([PSCustomObject]@{
                 Provider  = $Provider
                 Status    = "Skipped"
                 Message   = $msg
@@ -100,7 +100,7 @@ function Invoke-Step {
     # dry-run: log intent, skip real work
     if ($Script:IsDryRun) {
         Write-LogMessage "[DRY RUN] $Provider : $Description"
-        $Script:Results.Add([PSCustomObject]@{
+        $null = $Script:Results.Add([PSCustomObject]@{
             Provider  = $Provider
             Status    = "DryRun"
             Message   = "Would: $Description"
@@ -154,7 +154,7 @@ function Invoke-Step {
         Duration  = $sw.Elapsed
         Error     = $err
     }
-    $Script:Results.Add($result)
+    $null = $Script:Results.Add($result)
 
     if ($stat -eq "Failed" -and $Script:StopOnFirstError) {
         Write-LogMessage "Halting: StopOnFirstError is set."
@@ -272,7 +272,7 @@ if (-not $SkipDocker) {
         -Command {
             docker run --rm --name watchtower `
                 -v /var/run/docker.sock:/var/run/docker.sock `
-                containrrr/watchtower --run-once
+                nickfedor/watchtower --run-once
         }
 }
 

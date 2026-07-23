@@ -249,7 +249,7 @@ if [[ "$SKIP_DOCKER" != "true" ]]; then
     run_step "Docker (Watchtower)" "docker run watchtower" "docker" \
         docker run --rm --name watchtower \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            containrrr/watchtower --run-once
+            nickfedor/watchtower --run-once
 fi
 
 # ── firmware ─────────────────────────────────────────────
