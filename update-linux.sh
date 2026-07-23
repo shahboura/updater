@@ -56,7 +56,9 @@ run_step() {
     local -a cmd=("$@")
 
     # pre-flight: every required tool must exist
-    for tool in $req_tools; do
+    local -a tools
+    IFS=' ' read -ra tools <<< "$req_tools"
+    for tool in "${tools[@]}"; do
         [[ -n "$tool" ]] || continue
         if ! command_exists "$tool"; then
             local msg="$tool not found; skipped"
@@ -254,12 +256,15 @@ if [[ "$SKIP_PIPX" != "true" ]]; then
 fi
 
 # ── Docker ───────────────────────────────────────────────
+# WARNING: Mounting the Docker socket grants root-equivalent
+# host access.  Pin a specific image digest for production:
+#   nickfedor/watchtower@sha256:<digest>
 
 if [[ "$SKIP_DOCKER" != "true" ]]; then
     run_step "Docker (Watchtower)" "Updating Docker containers" "docker" \
         docker run --rm --name watchtower \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            nickfedor/watchtower --run-once
+            nickfedor/watchtower:1 --run-once
 fi
 
 # ── firmware ─────────────────────────────────────────────

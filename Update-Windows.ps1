@@ -89,10 +89,18 @@ $configPath = if ($Config) {
 
 if ($configPath) {
     try {
-        $configData = Get-Content $configPath -Raw | ConvertFrom-Json
+        $configData = Get-Content $configPath -Raw -ErrorAction Stop | ConvertFrom-Json
+        $allowedKeys = @(
+            'SkipWsl', 'SkipGit', 'SkipDocker', 'SkipWinget', 'SkipStore',
+            'SkipChoco', 'SkipScoop', 'SkipNpm', 'SkipNpmCache', 'SkipPip', 'SkipPSModule'
+        )
         foreach ($prop in $configData.PSObject.Properties) {
+            if ($prop.Name -notin $allowedKeys) {
+                Write-Warning "Ignoring unrecognized config key: $($prop.Name)"
+                continue
+            }
             if ($PSBoundParameters.ContainsKey($prop.Name)) { continue }
-            Set-Variable -Name $prop.Name -Value $prop.Value
+            Set-Variable -Name $prop.Name -Value ($prop.Value -as [bool])
         }
     }
     catch {
@@ -356,9 +364,14 @@ if (-not $SkipDocker) {
         Description   = "Updating Docker containers"
         RequiredTools = @("docker")
         Command       = {
+            # WARNING: Mounting the Docker socket grants the container
+            # root-equivalent host access.  Verify the image digest if
+            # running in a trusted environment.
+            # Pin a specific digest for production use:
+            #   nickfedor/watchtower@sha256:<digest>
             docker run --rm --name watchtower `
                 -v /var/run/docker.sock:/var/run/docker.sock `
-                nickfedor/watchtower --run-once
+                nickfedor/watchtower:1 --run-once
         }
     }
     Invoke-Step @params

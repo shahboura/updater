@@ -3,9 +3,10 @@
 One-command system update for Windows and Linux. Updates package managers,
 developer tools, containers, and firmware — all in a single pass.
 
-> **Linux users**: The script uses `sudo` for apt, snap, and firmware updates.
-> Run with `sudo ./update-linux.sh` or ensure your user has passwordless `sudo`
-> for those commands. Docker also requires `sudo` or `docker` group membership.
+> **Linux users**: The script runs `sudo` internally only for apt, snap, and
+> firmware — do **not** run the entire script as root (`sudo ./update-linux.sh`).
+> Configure passwordless sudo for those specific commands, or expect interactive
+> password prompts. Docker also requires `sudo` or `docker` group membership.
 
 ## Install (copy & paste)
 
@@ -114,3 +115,14 @@ The script auto-loads `update-config.json` if present. Pass `-Config <path>` for
 | `3` | Halted early (`--stop-on-error`) |
 
 > After running, check the exit code with `echo $?` (Linux) or `$LASTEXITCODE` (PowerShell).
+
+## Security
+
+- **Docker socket**: Watchtower mounts `/var/run/docker.sock`, granting root-equivalent
+  host access. Pin the image digest (`@sha256:...`) for production use.
+- **Log files**: Raw command output from `npm`, `pip`, and `docker` can contain tokens
+  or credentials. Do not share log files written with `-LogPath` / `--log-path`.
+- **Auto-accept**: `winget --accept-source-agreements` and `choco -y` automatically
+  accept third-party terms. Review your package sources if you run custom repositories.
+- **Config files**: Only recognized skip-flag keys are loaded from `update-config.json`.
+  Unrecognized keys are ignored with a warning.
