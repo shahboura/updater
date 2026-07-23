@@ -99,7 +99,7 @@ run_step() {
     RESULTS+=("$provider|$status|$safe_msg|$duration|$safe_err")
 
     if [[ "$status" == "Failed" && "$STOP_ON_ERROR" == "true" ]]; then
-        log_message "Halting: --stop-on-error is set."
+        log_message "Halting: stop-on-error is enabled."
         print_summary
         exit 3
     fi
@@ -201,9 +201,9 @@ fi
 # ── apt ──────────────────────────────────────────────────
 
 if [[ "$SKIP_APT" != "true" ]]; then
-    run_step "apt (update)"      "sudo apt-get update"      "sudo apt-get" sudo apt-get update
-    run_step "apt (upgrade)"     "sudo apt-get upgrade"     "sudo apt-get" sudo apt-get upgrade -y
-    run_step "apt (autoremove)"  "sudo apt-get autoremove"  "sudo apt-get" sudo apt-get autoremove -y
+    run_step "apt (update)"      "Updating apt package lists"    "sudo apt-get" sudo apt-get update
+    run_step "apt (upgrade)"     "Upgrading apt packages"        "sudo apt-get" sudo apt-get upgrade -y
+    run_step "apt (autoremove)"  "Removing unused apt packages"   "sudo apt-get" sudo apt-get autoremove -y
 fi
 
 # ── snap ─────────────────────────────────────────────────
@@ -211,27 +211,27 @@ fi
 # already running an auto-refresh.  The system is still updating.
 
 if [[ "$SKIP_SNAP" != "true" ]]; then
-    run_step "snap" "sudo snap refresh" "snap sudo" sudo snap refresh
+    run_step "snap" "Refreshing snap packages" "snap sudo" sudo snap refresh
 fi
 
 # ── flatpak ──────────────────────────────────────────────
 
 if [[ "$SKIP_FLATPAK" != "true" ]]; then
-    run_step "flatpak" "flatpak update" "flatpak" flatpak update -y
+    run_step "flatpak" "Updating flatpak packages" "flatpak" flatpak update -y
 fi
 
 # ── npm ──────────────────────────────────────────────────
 
 if [[ "$SKIP_NPM" != "true" ]]; then
-    run_step "npm" "npm upgrade -g" "npm" npm upgrade -g
+    run_step "npm" "Upgrading npm global packages" "npm" npm upgrade -g
 fi
 
 # ── pip ──────────────────────────────────────────────────
 
 if [[ "$SKIP_PIP" != "true" ]]; then
-    run_step "pip (self)" "pip install --upgrade pip" "python3" python3 -m pip install --upgrade pip
+    run_step "pip (self)" "Upgrading pip" "python3" python3 -m pip install --upgrade pip
     if command_exists pip-review; then
-        run_step "pip (pkgs)" "pip-review --auto" "pip-review" pip-review --auto
+        run_step "pip (pkgs)" "Upgrading pip user packages" "pip-review" pip-review --auto
     else
         log_message "⊘ pip (pkgs) : pip-review not found; skipped (install with: pip install pip-review)"
     fi
@@ -240,13 +240,13 @@ fi
 # ── pipx ─────────────────────────────────────────────────
 
 if [[ "$SKIP_PIPX" != "true" ]]; then
-    run_step "pipx" "pipx upgrade-all" "pipx" pipx upgrade-all
+    run_step "pipx" "Upgrading pipx packages" "pipx" pipx upgrade-all
 fi
 
 # ── Docker ───────────────────────────────────────────────
 
 if [[ "$SKIP_DOCKER" != "true" ]]; then
-    run_step "Docker (Watchtower)" "docker run watchtower" "docker" \
+    run_step "Docker (Watchtower)" "Updating Docker containers" "docker" \
         docker run --rm --name watchtower \
             -v /var/run/docker.sock:/var/run/docker.sock \
             nickfedor/watchtower --run-once
@@ -255,8 +255,8 @@ fi
 # ── firmware ─────────────────────────────────────────────
 
 if [[ "$SKIP_FIRMWARE" != "true" ]]; then
-    run_step "firmware (refresh)" "fwupdmgr refresh" "fwupdmgr" fwupdmgr refresh
-    run_step "firmware (update)"  "fwupdmgr update"  "fwupdmgr" fwupdmgr update -y
+    run_step "firmware (refresh)" "Refreshing firmware metadata" "fwupdmgr" fwupdmgr refresh
+    run_step "firmware (update)"  "Updating firmware"          "fwupdmgr" fwupdmgr update -y
 fi
 
 # ── finalize ─────────────────────────────────────────────

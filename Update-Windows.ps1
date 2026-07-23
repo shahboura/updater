@@ -157,7 +157,7 @@ function Invoke-Step {
     $null = $Script:Results.Add($result)
 
     if ($stat -eq "Failed" -and $Script:StopOnFirstError) {
-        Write-LogMessage "Halting: StopOnFirstError is set."
+        Write-LogMessage "Halting: stop-on-error is enabled."
         Write-SummaryReport
         exit 3
     }
@@ -183,8 +183,8 @@ function Write-SummaryReport {
     $outcomes = ($Script:Results | Group-Object Status -AsHashTable)
 
     foreach ($r in $Script:Results) {
-        $dur = if ($r.Duration.TotalSeconds -gt 0) {
-            " [$([math]::Round($r.Duration.TotalSeconds, 1))s]"
+        $dur = if ($r.Duration.TotalSeconds -ge 1) {
+            " [$([int]$r.Duration.TotalSeconds)s]"
         } else { "" }
         Write-Output "  $($icon[$r.Status]) $($r.Provider) : $($r.Status)$dur"
     }
@@ -243,21 +243,21 @@ if (-not $SkipWsl) {
     # If WSL kernel step was skipped (tool missing), apt steps skip too.
     if (Test-Command "wsl") {
         Invoke-Step -Provider "WSL (apt update)" `
-            -Description "sudo apt-get update" `
+            -Description "Updating WSL apt package lists" `
             -RequiredTools @("wsl") `
             -Command {
                 wsl sudo apt-get update
             }
 
         Invoke-Step -Provider "WSL (apt upgrade)" `
-            -Description "sudo apt-get upgrade" `
+            -Description "Upgrading WSL apt packages" `
             -RequiredTools @("wsl") `
             -Command {
                 wsl sudo apt-get upgrade -y
             }
 
         Invoke-Step -Provider "WSL (apt autoremove)" `
-            -Description "sudo apt-get autoremove" `
+            -Description "Removing unused WSL apt packages" `
             -RequiredTools @("wsl") `
             -Command {
                 wsl sudo apt-get autoremove -y
