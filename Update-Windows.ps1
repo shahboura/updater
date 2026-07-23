@@ -2,8 +2,9 @@
 .SYNOPSIS
     Updates Windows system packages and developer tools.
 .DESCRIPTION
-    Sequentially runs updates across winget, Microsoft Store, Git, WSL, Docker,
-    and npm. Each provider can be individually skipped with a switch parameter.
+    Sequentially runs updates across winget, Microsoft Store, Chocolatey, Scoop,
+    Git, WSL, Docker, npm, pip, pipx, and PowerShell modules.  Each provider can
+    be skipped individually with a switch parameter.
     Returns structured exit codes for CI / scheduled-task integration.
 .PARAMETER SkipWsl
     Skip WSL kernel and apt package updates.
@@ -15,23 +16,41 @@
     Skip winget package upgrades.
 .PARAMETER SkipStore
     Skip Microsoft Store app updates.
+.PARAMETER SkipChoco
+    Skip Chocolatey package upgrades.
+.PARAMETER SkipScoop
+    Skip Scoop package updates.
 .PARAMETER SkipNpm
     Skip npm global package upgrades.
+.PARAMETER SkipNpmCache
+    Skip npm cache cleanup (runs after npm upgrade by default).
+.PARAMETER SkipPip
+    Skip pip and pipx package upgrades.
+.PARAMETER SkipPSModule
+    Skip PowerShell module updates.
 .PARAMETER StopOnFirstError
     Halt execution on the first provider failure (default: continue).
 .PARAMETER DryRun
     Show what would be updated without making changes.
 .PARAMETER LogPath
     Path to write a log file. Timestamped output is appended.
+.PARAMETER Config
+    Path to a JSON config file with skip preferences.  Auto-loads
+    update-config.json from the script directory if present.
+    Command-line parameters always take precedence.
 .EXAMPLE
     .\Update-Windows.ps1
 .EXAMPLE
-    .\Update-Windows.ps1 -SkipWsl -SkipDocker
+    .\Update-Windows.ps1 -SkipWsl -SkipDocker -SkipChoco
 .EXAMPLE
     .\Update-Windows.ps1 -LogPath "$env:TEMP\update.log"
 .EXAMPLE
     .\Update-Windows.ps1 -DryRun
+.EXAMPLE
+    .\Update-Windows.ps1 -Config "$env:USERPROFILE\.update-config.json"
 #>
+
+#Requires -Version 5.1
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -40,10 +59,16 @@ param(
     [switch]$SkipDocker,
     [switch]$SkipWinget,
     [switch]$SkipStore,
+    [switch]$SkipChoco,
+    [switch]$SkipScoop,
     [switch]$SkipNpm,
+    [switch]$SkipNpmCache,
+    [switch]$SkipPip,
+    [switch]$SkipPSModule,
     [switch]$StopOnFirstError,
     [switch]$DryRun,
-    [string]$LogPath
+    [string]$LogPath,
+    [string]$Config
 )
 
 $ErrorActionPreference = "Continue"
@@ -51,6 +76,29 @@ $Script:LogFilePath      = $LogPath
 $Script:Results          = [System.Collections.Generic.List[PSCustomObject]]::new()
 $Script:IsDryRun         = $DryRun -or $WhatIfPreference
 $Script:StopOnFirstError = $StopOnFirstError
+
+# ── config file ──────────────────────────────────────────
+
+$configPath = if ($Config) {
+    $Config
+} elseif (Test-Path "$PSScriptRoot\update-config.json") {
+    "$PSScriptRoot\update-config.json"
+} else {
+    $null
+}
+
+if ($configPath) {
+    try {
+        $configData = Get-Content $configPath -Raw | ConvertFrom-Json
+        foreach ($prop in $configData.PSObject.Properties) {
+            if ($PSBoundParameters.ContainsKey($prop.Name)) { continue }
+            Set-Variable -Name $prop.Name -Value $prop.Value
+        }
+    }
+    catch {
+        Write-Warning "Could not load config '$configPath': $_"
+    }
+}
 
 # ── helpers ────────────────────────────────────────────
 
@@ -69,14 +117,15 @@ function Test-Command {
 }
 
 # ── core execution wrapper ─────────────────────────────
-#   Returns a result object.  Never throws to the caller;
-#   failures are recorded and surfaced in the summary.
 
 function Invoke-Step {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
         [string]$Provider,
+        [Parameter(Mandatory)]
         [string]$Description,
+        [Parameter(Mandatory)]
         [scriptblock]$Command,
         [string[]]$RequiredTools = @()
     )
@@ -93,7 +142,7 @@ function Invoke-Step {
                 Duration  = [TimeSpan]::Zero
                 Error     = $null
             })
-            return
+            return $false
         }
     }
 
@@ -107,7 +156,7 @@ function Invoke-Step {
             Duration  = [TimeSpan]::Zero
             Error     = $null
         })
-        return
+        return $false
     }
 
     Write-LogMessage "$Provider : $Description"
@@ -117,14 +166,9 @@ function Invoke-Step {
     $msg  = ""
 
     try {
-        # Reset exit code from any prior native command to
-        # prevent cross-step contamination.
         $global:LASTEXITCODE = 0
         & $Command 2>&1
 
-        # Capture both signals immediately — before any other
-        # statement resets $?.  $LASTEXITCODE is set by native
-        # exes; $? catches PowerShell-native failures.
         $cmdSuccess  = $?
         $cmdExitCode = $LASTEXITCODE
 
@@ -161,6 +205,8 @@ function Invoke-Step {
         Write-SummaryReport
         exit 3
     }
+
+    return ($stat -eq "Success")
 }
 
 # ── summary report ─────────────────────────────────────
@@ -204,85 +250,193 @@ function Write-SummaryReport {
 #  Providers
 # ═══════════════════════════════════════════════════════
 
+# ── winget ─────────────────────────────────────────────
+
 if (-not $SkipWinget) {
-    Invoke-Step -Provider "winget" `
-        -Description "Upgrading winget packages" `
-        -RequiredTools @("winget") `
-        -Command {
-            winget upgrade --all --silent --include-unknown --accept-source-agreements
-        }
+    $params = @{
+        Provider      = "winget"
+        Description   = "Upgrading winget packages"
+        RequiredTools = @("winget")
+        Command       = { winget upgrade --all --silent --include-unknown --accept-source-agreements }
+    }
+    Invoke-Step @params
 }
+
+# ── Microsoft Store ────────────────────────────────────
 
 if (-not $SkipStore) {
-    Invoke-Step -Provider "Microsoft Store" `
-        -Description "Upgrading Microsoft Store apps via winget (msstore)" `
-        -RequiredTools @("winget") `
-        -Command {
-            winget upgrade --source msstore --all --silent --include-unknown --accept-source-agreements
-        }
+    $params = @{
+        Provider      = "Microsoft Store"
+        Description   = "Upgrading Microsoft Store apps via winget (msstore)"
+        RequiredTools = @("winget")
+        Command       = { winget upgrade --source msstore --all --silent --include-unknown --accept-source-agreements }
+    }
+    Invoke-Step @params
 }
+
+# ── Chocolatey ─────────────────────────────────────────
+
+if (-not $SkipChoco) {
+    $params = @{
+        Provider      = "Chocolatey"
+        Description   = "Upgrading Chocolatey packages"
+        RequiredTools = @("choco")
+        Command       = { choco upgrade all -y --limit-output }
+    }
+    Invoke-Step @params
+}
+
+# ── Scoop ──────────────────────────────────────────────
+
+if (-not $SkipScoop) {
+    $params = @{
+        Provider      = "Scoop"
+        Description   = "Updating Scoop buckets and packages"
+        RequiredTools = @("scoop")
+        Command       = { scoop update; scoop update * }
+    }
+    Invoke-Step @params
+}
+
+# ── Git ────────────────────────────────────────────────
 
 if (-not $SkipGit) {
-    Invoke-Step -Provider "Git" `
-        -Description "Updating Git for Windows" `
-        -RequiredTools @("git") `
-        -Command {
-            git update-git-for-windows
-        }
+    $params = @{
+        Provider      = "Git"
+        Description   = "Updating Git for Windows"
+        RequiredTools = @("git")
+        Command       = { git update-git-for-windows }
+    }
+    Invoke-Step @params
 }
 
+# ── WSL ────────────────────────────────────────────────
+
 if (-not $SkipWsl) {
-    Invoke-Step -Provider "WSL (kernel)" `
-        -Description "Updating WSL kernel" `
-        -RequiredTools @("wsl") `
-        -Command {
-            wsl --update
-        }
+    $params = @{
+        Provider      = "WSL (kernel)"
+        Description   = "Updating WSL kernel"
+        RequiredTools = @("wsl")
+        Command       = { wsl --update }
+    }
+    Invoke-Step @params
 
-    # Only reach apt steps if wsl is present (checked by Invoke-Step above).
-    # If WSL kernel step was skipped (tool missing), apt steps skip too.
     if (Test-Command "wsl") {
-        Invoke-Step -Provider "WSL (apt update)" `
-            -Description "Updating WSL apt package lists" `
-            -RequiredTools @("wsl") `
-            -Command {
-                wsl sudo apt-get update
-            }
+        $params = @{
+            Provider      = "WSL (apt update)"
+            Description   = "Updating WSL apt package lists"
+            RequiredTools = @("wsl")
+            Command       = { wsl sudo apt-get update }
+        }
+        Invoke-Step @params
 
-        Invoke-Step -Provider "WSL (apt upgrade)" `
-            -Description "Upgrading WSL apt packages" `
-            -RequiredTools @("wsl") `
-            -Command {
-                wsl sudo apt-get upgrade -y
-            }
+        $params = @{
+            Provider      = "WSL (apt upgrade)"
+            Description   = "Upgrading WSL apt packages"
+            RequiredTools = @("wsl")
+            Command       = { wsl sudo apt-get upgrade -y }
+        }
+        Invoke-Step @params
 
-        Invoke-Step -Provider "WSL (apt autoremove)" `
-            -Description "Removing unused WSL apt packages" `
-            -RequiredTools @("wsl") `
-            -Command {
-                wsl sudo apt-get autoremove -y
-            }
+        $params = @{
+            Provider      = "WSL (apt autoremove)"
+            Description   = "Removing unused WSL apt packages"
+            RequiredTools = @("wsl")
+            Command       = { wsl sudo apt-get autoremove -y }
+        }
+        Invoke-Step @params
     }
 }
 
+# ── Docker ─────────────────────────────────────────────
+
 if (-not $SkipDocker) {
-    Invoke-Step -Provider "Docker (Watchtower)" `
-        -Description "Updating Docker containers" `
-        -RequiredTools @("docker") `
-        -Command {
+    $params = @{
+        Provider      = "Docker (Watchtower)"
+        Description   = "Updating Docker containers"
+        RequiredTools = @("docker")
+        Command       = {
             docker run --rm --name watchtower `
                 -v /var/run/docker.sock:/var/run/docker.sock `
                 nickfedor/watchtower --run-once
         }
+    }
+    Invoke-Step @params
 }
 
+# ── npm ────────────────────────────────────────────────
+
 if (-not $SkipNpm) {
-    Invoke-Step -Provider "npm" `
-        -Description "Upgrading npm global packages" `
-        -RequiredTools @("npm") `
-        -Command {
-            npm upgrade -g
+    $params = @{
+        Provider      = "npm"
+        Description   = "Upgrading npm global packages"
+        RequiredTools = @("npm")
+        Command       = { npm upgrade -g }
+    }
+    $npmOk = Invoke-Step @params
+
+    if ($npmOk -and -not $SkipNpmCache) {
+        $params = @{
+            Provider      = "npm (cache)"
+            Description   = "Cleaning npm cache"
+            RequiredTools = @("npm")
+            Command       = { npm cache clean --force }
         }
+        Invoke-Step @params
+    }
+}
+
+# ── pip / pipx ─────────────────────────────────────────
+
+if (-not $SkipPip) {
+    $params = @{
+        Provider      = "pip"
+        Description   = "Upgrading pip"
+        RequiredTools = @("python")
+        Command       = { python -m pip install --upgrade pip }
+    }
+    Invoke-Step @params
+
+    if (Test-Command "pip-review") {
+        $params = @{
+            Provider      = "pip (user packages)"
+            Description   = "Upgrading pip user packages"
+            RequiredTools = @("pip-review")
+            Command       = { pip-review --auto }
+        }
+        Invoke-Step @params
+    } else {
+        Write-LogMessage "⊘ pip (user packages) : pip-review not found; skipped (install with: pip install pip-review)"
+        $null = $Script:Results.Add([PSCustomObject]@{
+            Provider  = "pip (user packages)"
+            Status    = "Skipped"
+            Message   = "pip-review not found"
+            Duration  = [TimeSpan]::Zero
+            Error     = $null
+        })
+    }
+
+    if (Test-Command "pipx") {
+        $params = @{
+            Provider      = "pipx"
+            Description   = "Upgrading pipx packages"
+            RequiredTools = @("pipx")
+            Command       = { pipx upgrade-all }
+        }
+        Invoke-Step @params
+    }
+}
+
+# ── PowerShell modules ─────────────────────────────────
+
+if (-not $SkipPSModule) {
+    $params = @{
+        Provider      = "PowerShell modules"
+        Description   = "Updating PowerShell modules"
+        RequiredTools = @()
+        Command       = { Update-Module -Force -ErrorAction SilentlyContinue }
+    }
+    Invoke-Step @params
 }
 
 # ── finalize ───────────────────────────────────────────

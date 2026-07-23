@@ -17,6 +17,7 @@ SKIP_APT=false
 SKIP_SNAP=false
 SKIP_FLATPAK=false
 SKIP_NPM=false
+SKIP_NPM_CACHE=false
 SKIP_PIP=false
 SKIP_PIPX=false
 SKIP_DOCKER=false
@@ -61,7 +62,7 @@ run_step() {
             local msg="$tool not found; skipped"
             log_message "⊘ $provider : $msg"
             RESULTS+=("$provider|Skipped|$msg|0|")
-            return 0
+            return 1
         fi
     done
 
@@ -69,7 +70,7 @@ run_step() {
     if [[ "$DRY_RUN" == "true" ]]; then
         log_message "[DRY RUN] $provider : $description"
         RESULTS+=("$provider|DryRun|Would: $description|0|")
-        return 0
+        return 1
     fi
 
     log_message "$provider : $description"
@@ -93,7 +94,6 @@ run_step() {
     fi
 
     local duration=$((SECONDS - start))
-    # encode pipe characters so they don't break the delimiter
     local safe_msg="${message//|/¦}"
     local safe_err="${error//|/¦}"
     RESULTS+=("$provider|$status|$safe_msg|$duration|$safe_err")
@@ -103,6 +103,8 @@ run_step() {
         print_summary
         exit 3
     fi
+
+    [[ "$status" == "Success" ]] && return 0 || return 1
 }
 
 # ── summary report ───────────────────────────────────────
@@ -152,6 +154,7 @@ Options:
   --skip-snap        Skip snap package refreshes
   --skip-flatpak     Skip flatpak package updates
   --skip-npm         Skip npm global package upgrades
+  --skip-npm-cache   Skip npm cache cleanup (runs after upgrade by default)
   --skip-pip         Skip pip user package upgrades
   --skip-pipx        Skip pipx package upgrades
   --skip-docker      Skip Docker container updates (Watchtower)
@@ -174,6 +177,7 @@ while [[ $# -gt 0 ]]; do
         --skip-snap)      SKIP_SNAP=true ;;
         --skip-flatpak)   SKIP_FLATPAK=true ;;
         --skip-npm)       SKIP_NPM=true ;;
+        --skip-npm-cache) SKIP_NPM_CACHE=true ;;
         --skip-pip)       SKIP_PIP=true ;;
         --skip-pipx)      SKIP_PIPX=true ;;
         --skip-docker)    SKIP_DOCKER=true ;;
@@ -224,6 +228,11 @@ fi
 
 if [[ "$SKIP_NPM" != "true" ]]; then
     run_step "npm" "Upgrading npm global packages" "npm" npm upgrade -g
+    local npm_ok=$?
+
+    if [[ $npm_ok -eq 0 && "$SKIP_NPM_CACHE" != "true" ]]; then
+        run_step "npm (cache)" "Cleaning npm cache" "npm" npm cache clean --force
+    fi
 fi
 
 # ── pip ──────────────────────────────────────────────────
@@ -233,6 +242,7 @@ if [[ "$SKIP_PIP" != "true" ]]; then
     if command_exists pip-review; then
         run_step "pip (pkgs)" "Upgrading pip user packages" "pip-review" pip-review --auto
     else
+        RESULTS+=("pip (pkgs)|Skipped|pip-review not found|0|")
         log_message "⊘ pip (pkgs) : pip-review not found; skipped (install with: pip install pip-review)"
     fi
 fi

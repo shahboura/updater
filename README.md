@@ -29,41 +29,65 @@ Or copy `update-linux.sh` anywhere and `chmod +x` it.
 |------|---------|-------|
 | Update everything | `.\Update-Windows.ps1` | `./update-linux.sh` |
 | Preview only | `-DryRun` | `--dry-run` |
-| Skip a provider | `-SkipWsl -SkipDocker` | `--skip-snap --skip-docker` |
+| Skip a provider | `-SkipWsl -SkipChoco` | `--skip-snap --skip-docker` |
 | Log to file | `-LogPath update.log` | `--log-path update.log` |
 | Stop on first error | `-StopOnFirstError` | `--stop-on-error` |
+| Config file | `-Config my-config.json` | — |
 
 ### Windows providers
 
 | Flag | What it updates |
 |------|----------------|
-| *(default)* | winget, Microsoft Store, Git, WSL + apt, Docker, npm |
-| `-SkipWinget` | Skip winget packages |
+| *(default)* | winget, Microsoft Store, Chocolatey, Scoop, Git, WSL + apt, Docker, npm, npm cache, pip + pipx, PowerShell modules |
+| `-SkipWinget` | Skip winget |
 | `-SkipStore` | Skip Microsoft Store apps |
+| `-SkipChoco` | Skip Chocolatey |
+| `-SkipScoop` | Skip Scoop |
 | `-SkipGit` | Skip Git for Windows |
 | `-SkipWsl` | Skip WSL kernel & apt |
 | `-SkipDocker` | Skip Docker (Watchtower) |
-| `-SkipNpm` | Skip npm global packages |
+| `-SkipNpm` | Skip npm global + cache |
+| `-SkipNpmCache` | Skip npm cache cleanup only |
+| `-SkipPip` | Skip pip + pipx |
+| `-SkipPSModule` | Skip PowerShell module updates |
 
 ### Linux providers
 
 | Flag | What it updates |
 |------|----------------|
-| *(default)* | apt, snap, flatpak, npm, pip, pipx, Docker, firmware |
+| *(default)* | apt, snap, flatpak, npm, npm cache, pip, pipx, Docker, firmware |
 | `--skip-apt` | Skip apt |
 | `--skip-snap` | Skip snap |
 | `--skip-flatpak` | Skip flatpak |
-| `--skip-npm` | Skip npm global |
+| `--skip-npm` | Skip npm global + cache |
+| `--skip-npm-cache` | Skip npm cache cleanup only |
 | `--skip-pip` | Skip pip user packages |
 | `--skip-pipx` | Skip pipx |
 | `--skip-docker` | Skip Docker (Watchtower) |
 | `--skip-firmware` | Skip firmware (fwupd) |
+
+### Config file (Windows)
+
+Save preferences in `update-config.json` next to the script — no more remembering flags:
+
+```json
+{
+    "SkipChoco": true,
+    "SkipScoop": true,
+    "SkipDocker": true
+}
+```
+
+The script auto-loads `update-config.json` if present. Pass `-Config <path>` for a custom location.
+**Command-line flags always override config values.**
 
 ## Prerequisites
 
 | Tool | Windows | Linux |
 |------|---------|-------|
 | winget | Built-in (Win 10 22H2+ / Win 11) | — |
+| Chocolatey | [chocolatey.org/install](https://chocolatey.org/install) | — |
+| Scoop | [scoop.sh](https://scoop.sh) | — |
 | Git | [git-scm.com](https://git-scm.com) | `sudo apt install git` |
 | WSL | `wsl --install` | — |
 | Docker | [Docker Desktop](https://docker.com) | [Install Docker Engine](https://docs.docker.com/engine/install/ubuntu/) |
@@ -89,4 +113,4 @@ Or copy `update-linux.sh` anywhere and `chmod +x` it.
 | `2` | All providers failed |
 | `3` | Halted early (`--stop-on-error`) |
 
-> After running, check the exit code with `echo $?` (Linux) or `$LASTEXITCODE` (PowerShell). |
+> After running, check the exit code with `echo $?` (Linux) or `$LASTEXITCODE` (PowerShell).
