@@ -11,18 +11,20 @@ developer tools, containers, and firmware — all in a single pass.
 ## Install (copy & paste)
 
 **Windows** (PowerShell 5.1+):
+
 ```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/YOUR_USERNAME/updater/main/Update-Windows.ps1" -OutFile "$env:USERPROFILE\Update-Windows.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/shahboura/updater/main/Update-Windows.ps1" -OutFile "$env:USERPROFILE\Update-Windows.ps1"
 ```
+
 Or just download `Update-Windows.ps1` and place it anywhere on `PATH`.
 
 **Linux** (Ubuntu/Debian, bash 4+):
-```bash
-curl -fsSL "https://raw.githubusercontent.com/YOUR_USERNAME/updater/main/update-linux.sh" -o ~/update-linux.sh && chmod +x ~/update-linux.sh
-```
-Or copy `update-linux.sh` anywhere and `chmod +x` it.
 
-> Replace `YOUR_USERNAME` with the GitHub username hosting the repo.
+```bash
+curl -fsSL "https://raw.githubusercontent.com/shahboura/updater/main/update-linux.sh" -o ~/update-linux.sh && chmod +x ~/update-linux.sh
+```
+
+Or copy `update-linux.sh` anywhere and `chmod +x` it.
 
 ## Usage
 
