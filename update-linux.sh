@@ -229,8 +229,20 @@ fi
 # ── npm ──────────────────────────────────────────────────
 
 if [[ "$SKIP_NPM" != "true" ]]; then
-    run_step "npm" "Upgrading npm global packages" "npm" npm upgrade -g
-    local npm_ok=$?
+    npm_ok=0
+    npm_root="$(npm root -g 2>/dev/null)"
+
+    # Global npm packages may live in a root-owned location (e.g. an apt-installed
+    # npm puts them under /usr/lib/node_modules).  Skip gracefully with a hint
+    # instead of surfacing a raw EACCES error.
+    if [[ -n "$npm_root" && -d "$npm_root" && ! -w "$npm_root" ]]; then
+        log_message "⊘ npm : global prefix '$npm_root' is not writable; skipped (re-run with sudo or configure a user-local npm prefix)"
+        RESULTS+=("npm|Skipped|global prefix not writable|0|")
+        npm_ok=1
+    else
+        run_step "npm" "Upgrading npm global packages" "npm" npm upgrade -g
+        npm_ok=$?
+    fi
 
     if [[ $npm_ok -eq 0 && "$SKIP_NPM_CACHE" != "true" ]]; then
         run_step "npm (cache)" "Cleaning npm cache" "npm" npm cache clean --force

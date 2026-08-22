@@ -150,7 +150,7 @@ function Invoke-Step {
                 Duration  = [TimeSpan]::Zero
                 Error     = $null
             })
-            return $false
+            return
         }
     }
 
@@ -164,7 +164,7 @@ function Invoke-Step {
             Duration  = [TimeSpan]::Zero
             Error     = $null
         })
-        return $false
+        return
     }
 
     Write-LogMessage "$Provider : $Description"
@@ -214,7 +214,7 @@ function Invoke-Step {
         exit 3
     }
 
-    return ($stat -eq "Success")
+    # Success/failure is recorded in $Script:Results above; no return value.
 }
 
 # ── summary report ─────────────────────────────────────
@@ -380,13 +380,36 @@ if (-not $SkipDocker) {
 # ── npm ────────────────────────────────────────────────
 
 if (-not $SkipNpm) {
-    $params = @{
-        Provider      = "npm"
-        Description   = "Upgrading npm global packages"
-        RequiredTools = @("npm")
-        Command       = { npm upgrade -g }
+    $npmOk = $false
+
+    # Global npm packages often live in a system-owned location (e.g.
+    # C:\Program Files\nodejs) that requires an elevated shell to write to.
+    # Detect that case up front and skip gracefully instead of surfacing a raw
+    # EPERM error from npm.
+    $npmPrefix       = (npm root -g 2>$null | Select-Object -First 1)
+    $isElevated      = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $prefixProtected = $npmPrefix -and ($npmPrefix -like "$env:ProgramFiles*")
+
+    if (-not $isElevated -and $prefixProtected) {
+        $msg = "global prefix '$npmPrefix' requires an elevated (Administrator) shell; skipped"
+        Write-LogMessage "⊘ npm : $msg"
+        $null = $Script:Results.Add([PSCustomObject]@{
+            Provider  = "npm"
+            Status    = "Skipped"
+            Message   = $msg
+            Duration  = [TimeSpan]::Zero
+            Error     = $null
+        })
+    } else {
+        $params = @{
+            Provider      = "npm"
+            Description   = "Upgrading npm global packages"
+            RequiredTools = @("npm")
+            Command       = { npm upgrade -g }
+        }
+        Invoke-Step @params
+        $npmOk = ($Script:Results[$Script:Results.Count - 1].Status -eq "Success")
     }
-    $npmOk = Invoke-Step @params
 
     if ($npmOk -and -not $SkipNpmCache) {
         $params = @{

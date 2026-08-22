@@ -1,0 +1,18 @@
+{
+  "project": "updater",
+  "updatedAt": "2026-08-22T14:27:00",
+  "phase": "complete",
+  "lastTask": "Fix npm EPERM error handling and cache-gating bug (Windows & Linux)",
+  "decisions": [
+    "Invoke-Step (PowerShell) returns no value; success is read from $Script:Results[...].Status — single source of truth.",
+    "npm step skips gracefully when the global prefix needs elevation (Windows: under C:\\Program Files + non-elevated) or is not writable (Linux: -w check on npm root -g).",
+    "Rejected the Write-Host/Out-Host workaround in favor of removing the redundant boolean return value."
+  ],
+  "risks": [
+    "Windows elevation heuristic (prefix under $env:ProgramFiles) may skip npm for a rare user who has write access to Program Files without elevation."
+  ],
+  "nextActions": [
+    "Commit and push the npm fix (scripts + README + context files).",
+    "Optional: verify the npm global-update path under an elevated shell."
+  ]
+}

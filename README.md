@@ -103,6 +103,12 @@ The script auto-loads `update-config.json` if present. Pass `-Config <path>` for
 
 > Missing tools are detected at runtime and skipped gracefully. No tool is mandatory.
 >
+> **npm global updates need write access to the global prefix.** On Windows, a
+> Node.js install under `C:\Program Files\nodejs` requires an elevated
+> (Administrator) shell. On Linux, an apt-installed npm requires `sudo` or a
+> user-local prefix (e.g. `~/.npm-global` or nvm). If the prefix isn't writable,
+> the scripts skip the npm step with a hint instead of failing.
+>
 > **Snap auto-refresh**: If the snap daemon is already running a background
 > refresh, the snap step may report a non-fatal failure — snaps are still
 > being updated by the system.
