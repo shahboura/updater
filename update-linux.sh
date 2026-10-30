@@ -26,6 +26,7 @@ DRY_RUN=false
 STOP_ON_ERROR=false
 LOG_PATH=""
 RESULTS=()
+LAST_STATUS=""
 
 # ── helpers ──────────────────────────────────────────────
 
@@ -47,6 +48,10 @@ command_exists() {
 #  <req-tools> is a space-separated string of executables that
 #  must be on PATH.  Pass an empty string ("") for no checks.
 #  The step is skipped if any required tool is missing.
+#
+#  Returns 0 only when the command succeeded.  Skipped/dry-run
+#  steps return 1, so callers must not gate follow-up steps on
+#  $? alone during a dry run — check LAST_STATUS instead.
 
 run_step() {
     local provider="$1"
@@ -56,14 +61,15 @@ run_step() {
     local -a cmd=("$@")
 
     # pre-flight: every required tool must exist
+    local tool
     local -a tools
     IFS=' ' read -ra tools <<< "$req_tools"
     for tool in "${tools[@]}"; do
-        [[ -n "$tool" ]] || continue
-        if ! command_exists "$tool"; then
+        if [[ -n "$tool" ]] && ! command_exists "$tool"; then
             local msg="$tool not found; skipped"
             log_message "⊘ $provider : $msg"
-            RESULTS+=("$provider|Skipped|$msg|0|")
+            RESULTS+=("$provider|Skipped|$msg|0")
+            LAST_STATUS="Skipped"
             return 1
         fi
     done
@@ -71,15 +77,15 @@ run_step() {
     # dry-run
     if [[ "$DRY_RUN" == "true" ]]; then
         log_message "[DRY RUN] $provider : $description"
-        RESULTS+=("$provider|DryRun|Would: $description|0|")
+        RESULTS+=("$provider|DryRun|Would: $description|0")
+        LAST_STATUS="DryRun"
         return 1
     fi
 
     log_message "$provider : $description"
     local start=$SECONDS
     local status="Success"
-    local message=""
-    local error=""
+    local message="Done"
 
     # execute — output flows to terminal so the user sees progress
     local rc=0
@@ -87,18 +93,14 @@ run_step() {
 
     if [[ $rc -ne 0 ]]; then
         status="Failed"
-        error="exited with code $rc"
-        message="$error"
+        message="exited with code $rc"
         log_message "✗ $provider : $message"
     else
-        message="Done"
         log_message "✓ $provider : $message"
     fi
 
-    local duration=$((SECONDS - start))
-    local safe_msg="${message//|/¦}"
-    local safe_err="${error//|/¦}"
-    RESULTS+=("$provider|$status|$safe_msg|$duration|$safe_err")
+    RESULTS+=("$provider|$status|${message//|/¦}|$((SECONDS - start))")
+    LAST_STATUS="$status"
 
     if [[ "$status" == "Failed" && "$STOP_ON_ERROR" == "true" ]]; then
         log_message "Halting: stop-on-error is enabled."
@@ -124,10 +126,11 @@ print_summary() {
         [DryRun]="○"
     )
 
+    local provider status duration entry
     local passed=0 failed=0 skipped=0 dry=0 total=0
 
     for entry in "${RESULTS[@]}"; do
-        IFS='|' read -r provider status msg duration err <<< "$entry"
+        IFS='|' read -r provider status _ duration <<< "$entry"
         local dur_str=""
         [[ "$duration" =~ ^[0-9]+$ && "$duration" -gt 0 ]] && dur_str=" [${duration}s]"
         echo "  ${icon[$status]:-?} $provider : $status$dur_str"
@@ -139,6 +142,16 @@ print_summary() {
             DryRun)  ((dry++)) ;;
         esac
     done
+
+    # repeat the failures here so the user does not have to scroll back
+    if ((failed > 0)); then
+        echo "───"
+        echo "Failures:"
+        for entry in "${RESULTS[@]}"; do
+            IFS='|' read -r provider status msg _ <<< "$entry"
+            [[ "$status" == "Failed" ]] && echo "  ✗ $provider : $msg"
+        done
+    fi
 
     echo "───"
     echo "Total: $total  |  ✓ Passed: $passed  |  ✗ Failed: $failed  |  ⊘ Skipped: $skipped  |  ○ DryRun: $dry"
@@ -168,7 +181,7 @@ Options:
 
 Exit codes: 0=all ok  1=partial  2=all failed  3=halted
 EOF
-    exit 0
+    exit "${1:-0}"
 }
 
 # ── parse args ───────────────────────────────────────────
@@ -186,9 +199,16 @@ while [[ $# -gt 0 ]]; do
         --skip-firmware)  SKIP_FIRMWARE=true ;;
         --dry-run)        DRY_RUN=true ;;
         --stop-on-error)  STOP_ON_ERROR=true ;;
-        --log-path)       LOG_PATH="$2"; shift ;;
+        --log-path)
+            if [[ -z "${2:-}" || "$2" == -* ]]; then
+                echo "--log-path requires a path" >&2
+                usage 2
+            fi
+            LOG_PATH="$2"
+            shift
+            ;;
         -h|--help)        usage ;;
-        *) echo "Unknown option: $1"; usage ;;
+        *) echo "Unknown option: $1" >&2; usage 2 ;;
     esac
     shift
 done
@@ -199,6 +219,8 @@ if ((BASH_VERSINFO[0] < 4)); then
     echo "bash 4.0+ required (found $BASH_VERSION)" >&2
     exit 2
 fi
+
+log_message "Update started on $(uname -sr) (dry run: $DRY_RUN)"
 
 # ══════════════════════════════════════════════════════════
 #  Providers
@@ -229,7 +251,6 @@ fi
 # ── npm ──────────────────────────────────────────────────
 
 if [[ "$SKIP_NPM" != "true" ]]; then
-    npm_ok=0
     npm_root="$(npm root -g 2>/dev/null)"
 
     # Global npm packages may live in a root-owned location (e.g. an apt-installed
@@ -237,14 +258,14 @@ if [[ "$SKIP_NPM" != "true" ]]; then
     # instead of surfacing a raw EACCES error.
     if [[ -n "$npm_root" && -d "$npm_root" && ! -w "$npm_root" ]]; then
         log_message "⊘ npm : global prefix '$npm_root' is not writable; skipped (re-run with sudo or configure a user-local npm prefix)"
-        RESULTS+=("npm|Skipped|global prefix not writable|0|")
-        npm_ok=1
+        RESULTS+=("npm|Skipped|global prefix not writable|0")
+        LAST_STATUS="Skipped"
     else
         run_step "npm" "Upgrading npm global packages" "npm" npm upgrade -g
-        npm_ok=$?
     fi
 
-    if [[ $npm_ok -eq 0 && "$SKIP_NPM_CACHE" != "true" ]]; then
+    # clean the cache unless npm failed or was skipped (a dry run records it)
+    if [[ "$SKIP_NPM_CACHE" != "true" && ( "$LAST_STATUS" == "Success" || "$LAST_STATUS" == "DryRun" ) ]]; then
         run_step "npm (cache)" "Cleaning npm cache" "npm" npm cache clean --force
     fi
 fi
@@ -256,7 +277,8 @@ if [[ "$SKIP_PIP" != "true" ]]; then
     if command_exists pip-review; then
         run_step "pip (pkgs)" "Upgrading pip user packages" "pip-review" pip-review --auto
     else
-        RESULTS+=("pip (pkgs)|Skipped|pip-review not found|0|")
+        RESULTS+=("pip (pkgs)|Skipped|pip-review not found|0")
+        LAST_STATUS="Skipped"
         log_message "⊘ pip (pkgs) : pip-review not found; skipped (install with: pip install pip-review)"
     fi
 fi
@@ -293,7 +315,7 @@ print_summary
 failed=0
 success=0
 for entry in "${RESULTS[@]}"; do
-    IFS='|' read -r _ status _ _ _ <<< "$entry"
+    IFS='|' read -r _ status _ _ <<< "$entry"
     [[ "$status" == "Failed" ]]  && ((failed++))
     [[ "$status" == "Success" ]] && ((success++))
 done

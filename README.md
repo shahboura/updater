@@ -123,13 +123,17 @@ The script auto-loads `update-config.json` if present. Pass `-Config <path>` for
 | `3` | Halted early (`--stop-on-error`) |
 
 > After running, check the exit code with `echo $?` (Linux) or `$LASTEXITCODE` (PowerShell).
+> On Linux, invalid arguments also exit `2`; PowerShell rejects unknown parameters
+> before the script runs.
 
 ## Security
 
 - **Docker socket**: Watchtower mounts `/var/run/docker.sock`, granting root-equivalent
   host access. Pin the image digest (`@sha256:...`) for production use.
-- **Log files**: Raw command output from `npm`, `pip`, and `docker` can contain tokens
-  or credentials. Do not share log files written with `-LogPath` / `--log-path`.
+- **Log files**: `-LogPath` / `--log-path` records the timestamped status lines
+  (provider, result, error message) only. Raw command output stays on the console.
+  Error messages can still quote registry URLs or credentials from the failing
+  command, so review a log before sharing it.
 - **Auto-accept**: `winget --accept-source-agreements` and `choco -y` automatically
   accept third-party terms. Review your package sources if you run custom repositories.
 - **Config files**: Only recognized skip-flag keys are loaded from `update-config.json`.

@@ -1,18 +1,23 @@
 {
   "project": "updater",
-  "updatedAt": "2026-08-22T14:27:00",
+  "updatedAt": "2026-10-30T08:55:00",
   "phase": "complete",
-  "lastTask": "Fix npm EPERM error handling and cache-gating bug (Windows & Linux)",
+  "lastTask": "Cleanup pass: trim boilerplate, fix dry-run npm cache gate, improve summary/logging (Windows & Linux)",
   "decisions": [
-    "Invoke-Step (PowerShell) returns no value; success is read from $Script:Results[...].Status — single source of truth.",
-    "npm step skips gracefully when the global prefix needs elevation (Windows: under C:\\Program Files + non-elevated) or is not writable (Linux: -w check on npm root -g).",
-    "Rejected the Write-Host/Out-Host workaround in favor of removing the redundant boolean return value."
+    "Windows providers call Invoke-Step with named parameters; the $params splat blocks were noise and shared mutable state.",
+    "Add-StepResult is the single place a result row is built; the unused Error field was removed on both scripts (Message already carries the error text).",
+    "Linux exposes LAST_STATUS from run_step so follow-up steps gate on the recorded result instead of $? or RESULTS string parsing.",
+    "run_step still returns 0 only on success; its comment documents that skipped/dry-run return 1.",
+    "npm cache runs when the npm row is Success or DryRun on both scripts, so --dry-run previews it and a failed/skipped npm never triggers it.",
+    "Invalid CLI args exit 2 (usage error). PowerShell rejects unknown parameters at binding time instead."
   ],
   "risks": [
-    "Windows elevation heuristic (prefix under $env:ProgramFiles) may skip npm for a rare user who has write access to Program Files without elevation."
+    "No PowerShell runtime in this environment: Update-Windows.ps1 was reviewed statically (brace balance, backtick EOL, call-site arity, no leftover $params/Error refs) but not executed.",
+    "Windows elevation heuristic (prefix under $env:ProgramFiles) may skip npm for a rare user who can write there without elevation.",
+    "Removing the Test-Command guards means a machine without WSL now shows four WSL rows marked Skipped instead of none (more visible, not a regression)."
   ],
   "nextActions": [
-    "Commit and push the npm fix (scripts + README + context files).",
-    "Optional: verify the npm global-update path under an elevated shell."
+    "Commit and push the cleanup pass (pending user confirmation).",
+    "Run Update-Windows.ps1 -DryRun once on a Windows machine to confirm the split provider calls bind correctly."
   ]
 }
